@@ -108,7 +108,8 @@ class ColorlightHSPI(Elaboratable):
                     signals=signals,
                     sample_depth=depth,
                     domain="hspi", o_domain="usb",
-                    samples_pretrigger=256)
+                    samples_pretrigger=256,
+                    with_enable=True)
 
             stream_ep = USBMultibyteStreamInEndpoint(
                 endpoint_number=1, # EP 1 IN
@@ -119,7 +120,8 @@ class ColorlightHSPI(Elaboratable):
 
             m.d.comb += [
                 stream_ep.stream.stream_eq(ila.stream),
-                ila.trigger.eq(hspi.rx_act),
+                ila.trigger.eq(1),
+                ila.enable.eq(hspi.rx_act),
             ]
 
             ILACoreParameters(ila).pickle()
