@@ -12,6 +12,8 @@ from amaranth_boards.colorlight_qmtech import ColorlightQMTechPlatform
 from luna.gateware.platform.core       import LUNAPlatform
 
 class ColorlightDomainGenerator(Elaboratable):
+    HSPI_FREQ_MHZ="96"
+
     """ Clock generator for the Colorlight I5/I9 board. """
     def __init__(self, clock_frequencies=None):
         pass
@@ -140,8 +142,8 @@ class ColorlightDomainGenerator(Elaboratable):
                 o_CLKOP=hspi_feedback,
 
                 # Synthesis attributes.
-                a_FREQUENCY_PIN_CLKI="60",
-                a_FREQUENCY_PIN_CLKOP="60",
+                a_FREQUENCY_PIN_CLKI=self.HSPI_FREQ_MHZ,
+                a_FREQUENCY_PIN_CLKOP=self.HSPI_FREQ_MHZ,
 
                 a_ICP_CURRENT="6",
                 a_LPF_RESISTOR="16",

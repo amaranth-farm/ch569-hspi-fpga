@@ -33,11 +33,11 @@ class ColorlightHSPI(Elaboratable):
             d.bDeviceSubclass    = 0x02
             d.bDeviceProtocol    = 0x01
             d.idVendor           = 0x1209
-            d.idProduct          = 0x0815
+            d.idProduct          = 0x4711
 
             d.iManufacturer      = "Hans Baier"
             d.iProduct           = "HSPI-ILA"
-            d.iSerialNumber      = "0815"
+            d.iSerialNumber      = "4711"
             d.bcdDevice          = 0.01
 
             d.bNumConfigurations = 1
@@ -130,7 +130,7 @@ class ColorlightHSPI(Elaboratable):
 
 if __name__ == "__main__":
     os.environ["AMARANTH_verbose"] = "True"
-    #os.environ["AMARANTH_synth_opts"] = "-abc9"
+    os.environ["AMARANTH_synth_opts"] = "-abc9"
     os.environ["AMARANTH_nextpnr_opts"] = "--timing-allow-fail"
     os.environ["LUNA_PLATFORM"] = "boardsetup:ColorlightHSPIPlatform"
     top_level_cli(ColorlightHSPI)
