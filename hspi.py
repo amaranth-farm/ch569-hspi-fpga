@@ -63,6 +63,49 @@ class HSPICRC(Elaboratable):
 
         return m
 
+class CRC(Elaboratable):
+    def __init__(self, *, polynomial, size, datawidth, init=None, delay=False):
+        self.datawidth   = datawidth
+        self.size        = size
+        self.init        = init
+        self.polynomial  = polynomial
+        self.delay       = delay
+
+        if init is None:
+            self.init = (1 << size) - 1
+
+        self.reset_in  = Signal()
+        self.enable_in = Signal()
+        self.data_in   = Signal(datawidth)
+        self.crc_out   = Signal(size)
+
+    def elaborate(self, platform):
+        m = Module()
+
+        crcreg = [Signal(self.size, reset=self.init) for i in range(self.datawidth + 1)]
+
+        for i in range(self.datawidth):
+            inv = self.data_in[i] ^ crcreg[i][self.size - 1]
+            tmp = []
+            tmp.append(inv)
+            for j in range(self.size - 1):
+                if((self.polynomial >> (j + 1)) & 1):
+                    tmp.append(crcreg[i][j] ^ inv)
+                else:
+                    tmp.append(crcreg[i][j])
+            m.d.comb += crcreg[i + 1].eq(Cat(*tmp))
+
+        with m.If(self.reset_in):
+            m.d.sync += crcreg[0].eq(self.init)
+        with m.Elif(self.enable_in):
+            m.d.sync += crcreg[0].eq(crcreg[self.datawidth])
+
+        domain = m.d.sync if self.delay else m.d.comb
+        domain += self.crc_out.eq(crcreg[self.datawidth][::-1] ^ self.init)
+
+        return m
+
+
 class HSPIInterface(Record):
     """ Record that represents a HSPI interface. """
 
@@ -87,7 +130,7 @@ class HSPITransmitter(Elaboratable):
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
-        m.submodules.crc = crc = HSPICRC()
+        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, size=32, datawidth=32, delay=True)
 
         hspi = self.hspi_out
 
@@ -170,6 +213,34 @@ class HSPITransmitter(Elaboratable):
         return m
 
 
+class HSPIReceiver(Elaboratable):
+    def __init__(self):
+        self.hspi_in = HSPIInterface()
+        self.state = Signal(2)
+
+    def elaborate(self, platform: Platform) -> Module:
+        m = Module()
+
+        hspi = self.hspi_in
+
+        m.d.comb += [
+            hspi.hd.oe.eq(0),
+        ]
+
+        with m.FSM() as fsm:
+            m.d.comb += self.state.eq(fsm.state)
+            with m.State("START"):
+                with m.If(hspi.rx_act):
+                    m.d.sync += hspi.tx_ack.eq(1)
+                    m.next = "RX"
+
+            with m.State("RX"):
+                with m.If(~hspi.rx_act):
+                    m.d.sync += hspi.tx_ack.eq(0)
+                    m.next = "START"
+
+        return m
+
 from amlib.test import GatewareTestCase, sync_test_case
 
 class HSPITransmitterTest(GatewareTestCase):
@@ -179,6 +250,8 @@ class HSPITransmitterTest(GatewareTestCase):
     @sync_test_case
     def test_hspi_tx(self):
         dut = self.dut
-        yield from self.advance_cycles(3)
-        yield dut.hspi_out.tx_ready.eq(1)
-        yield from self.advance_cycles(1024)
+        for i in range(5):
+            yield from self.advance_cycles(3)
+            yield dut.hspi_out.tx_ready.eq(1)
+            yield from self.advance_cycles(135)
+            yield dut.hspi_out.tx_ready.eq(0)

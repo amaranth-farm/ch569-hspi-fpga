@@ -17,7 +17,7 @@ from luna.gateware.usb.usb2.endpoints.stream  import USBMultibyteStreamInEndpoin
 
 from amlib.debug.ila     import StreamILA, ILACoreParameters
 
-from hspi import HSPITransmitter
+from hspi import HSPITransmitter, HSPIReceiver
 
 class ColorlightHSPI(Elaboratable):
     USE_ILA = True
@@ -82,9 +82,20 @@ class ColorlightHSPI(Elaboratable):
                 hspi_pads.hd.o.eq(hspi_tx.hspi_out.hd.o),
             ]
         else:
+            m.submodules.hspi_rx = hspi_rx = DomainRenamer("hspi")(HSPIReceiver())
             m.d.comb += [
-                hspi_pads.tx_ack.eq(1),
-                hspi_pads.hd.oe.eq(0),
+                # HSPI inputs
+                hspi_rx.hspi_in.tx_ready.eq(hspi_pads.tx_ready),
+                hspi_rx.hspi_in.rx_act.eq(hspi_pads.rx_act),
+                hspi_rx.hspi_in.rx_valid.eq(hspi_pads.rx_valid),
+                hspi_rx.hspi_in.hd.i.eq(hspi_pads.hd.i),
+
+                # HSPI outputs
+                hspi_pads.tx_ack.eq(hspi_rx.hspi_in.tx_ack),
+                hspi_pads.tx_req.eq(hspi_rx.hspi_in.tx_req),
+                hspi_pads.tx_valid.eq(hspi_rx.hspi_in.tx_valid),
+                hspi_pads.hd.oe.eq(hspi_rx.hspi_in.hd.oe),
+                hspi_pads.hd.o.eq(hspi_rx.hspi_in.hd.o),
             ]
 
         if self.USE_ILA:
@@ -128,7 +139,7 @@ class ColorlightHSPI(Elaboratable):
                     hspi_pads.hd.o,
                 ]
             else:
-                signals += [
+                signals =[hspi_rx.state] + signals + [
                 hspi_pads.hd.i,
             ]
 
