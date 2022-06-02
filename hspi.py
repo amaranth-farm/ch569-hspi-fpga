@@ -149,7 +149,7 @@ class HSPITransmitter(Elaboratable):
 
             with m.State("PAUSE"):
                 m.d.sync += data.eq(data + 1)
-                with m.If(data[29]):
+                with m.If(data[26]):
                     m.d.sync += data.eq(0)
                     m.next = "START"
 
