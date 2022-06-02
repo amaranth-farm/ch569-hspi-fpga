@@ -145,13 +145,14 @@ class ColorlightHSPI(Elaboratable):
 
             signals_bits = sum([s.width for s in signals])
             depth = 2 * 8 * 1024 #int(33*8*1024/signals_bits)
+            use_enable = False
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
                     sample_depth=depth,
                     domain="hspi", o_domain="usb",
                     samples_pretrigger=256,
-                    with_enable=True)
+                    with_enable=use_enable)
 
             stream_ep = USBMultibyteStreamInEndpoint(
                 endpoint_number=1, # EP 1 IN
@@ -160,14 +161,19 @@ class ColorlightHSPI(Elaboratable):
             )
             usb.add_endpoint(stream_ep)
 
-            m.d.comb += [
-                stream_ep.stream.stream_eq(ila.stream),
-                ila.trigger.eq(1),
-            ]
-            if transmit:
-                m.d.comb += ila.enable.eq(hspi_pads.tx_req),
+            m.d.comb += stream_ep.stream.stream_eq(ila.stream),
+
+            if use_enable:
+                m.d.comb += ila.trigger.eq(1),
+                if transmit:
+                    m.d.comb += ila.enable.eq(hspi_pads.tx_req),
+                else:
+                    m.d.comb += ila.enable.eq(hspi_pads.rx_act),
             else:
-                m.d.comb += ila.enable.eq(hspi_pads.rx_act),
+                if transmit:
+                    m.d.comb += ila.trigger.eq(hspi_pads.tx_req),
+                else:
+                    m.d.comb += ila.trigger.eq(hspi_pads.rx_act),
 
 
             ILACoreParameters(ila).pickle()
