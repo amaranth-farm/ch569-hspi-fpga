@@ -64,31 +64,31 @@ class HSPICRC(Elaboratable):
         return m
 
 class CRC(Elaboratable):
-    def __init__(self, *, polynomial, size, datawidth, init=None, delay=False):
+    def __init__(self, *, polynomial, crc_size, datawidth, init=None, delay=False):
         self.datawidth   = datawidth
-        self.size        = size
+        self.crc_size    = crc_size
         self.init        = init
         self.polynomial  = polynomial
         self.delay       = delay
 
         if init is None:
-            self.init = (1 << size) - 1
+            self.init = (1 << crc_size) - 1
 
         self.reset_in  = Signal()
         self.enable_in = Signal()
         self.data_in   = Signal(datawidth)
-        self.crc_out   = Signal(size)
+        self.crc_out   = Signal(crc_size)
 
     def elaborate(self, platform):
         m = Module()
 
-        crcreg = [Signal(self.size, reset=self.init) for i in range(self.datawidth + 1)]
+        crcreg = [Signal(self.crc_size, reset=self.init) for i in range(self.datawidth + 1)]
 
         for i in range(self.datawidth):
-            inv = self.data_in[i] ^ crcreg[i][self.size - 1]
+            inv = self.data_in[i] ^ crcreg[i][self.crc_size - 1]
             tmp = []
             tmp.append(inv)
-            for j in range(self.size - 1):
+            for j in range(self.crc_size - 1):
                 if((self.polynomial >> (j + 1)) & 1):
                     tmp.append(crcreg[i][j] ^ inv)
                 else:
@@ -130,7 +130,7 @@ class HSPITransmitter(Elaboratable):
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
-        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, size=32, datawidth=32, delay=True)
+        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
 
         hspi = self.hspi_out
 
