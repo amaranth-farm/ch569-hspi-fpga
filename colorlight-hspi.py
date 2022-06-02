@@ -17,6 +17,7 @@ from luna.gateware.usb.usb2.endpoints.stream  import USBMultibyteStreamInEndpoin
 
 from amlib.debug.ila     import StreamILA, ILACoreParameters
 
+from hspi import HSPITransmitter
 
 class ColorlightHSPI(Elaboratable):
     USE_ILA = True
@@ -56,15 +57,35 @@ class ColorlightHSPI(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
+        transmit = True
+
         # Generate our domain clocks/resets.
         m.submodules.car = platform.clock_domain_generator()
 
-        hspi = platform.request("hspi", 0)
+        hspi_pads = platform.request("hspi", 0)
 
-        m.d.comb += [
-            hspi.tx_ack.eq(1),
-            hspi.hd.oe.eq(0),
-        ]
+
+        if transmit:
+            m.submodules.hspi_tx = hspi_tx = DomainRenamer("hspi")(HSPITransmitter())
+            m.d.comb += [
+                # HSPI inputs
+                hspi_tx.hspi_out.tx_ready.eq(hspi_pads.tx_ready),
+                hspi_tx.hspi_out.rx_act.eq(hspi_pads.rx_act),
+                hspi_tx.hspi_out.rx_valid.eq(hspi_pads.rx_valid),
+                hspi_tx.hspi_out.hd.i.eq(hspi_pads.hd.i),
+
+                # HSPI outputs
+                hspi_pads.tx_ack.eq(hspi_tx.hspi_out.tx_ack),
+                hspi_pads.tx_req.eq(hspi_tx.hspi_out.tx_req),
+                hspi_pads.tx_valid.eq(hspi_tx.hspi_out.tx_valid),
+                hspi_pads.hd.oe.eq(hspi_tx.hspi_out.hd.oe),
+                hspi_pads.hd.o.eq(hspi_tx.hspi_out.hd.o),
+            ]
+        else:
+            m.d.comb += [
+                hspi_pads.tx_ack.eq(1),
+                hspi_pads.hd.oe.eq(0),
+            ]
 
         if self.USE_ILA:
             ulpi = platform.request(platform.default_usb_connection)
@@ -92,17 +113,27 @@ class ColorlightHSPI(Elaboratable):
             control_ep.add_request_handler(StallOnlyRequestHandler(stall_condition))
 
             signals = [
-                #hspi.tx_ack,
-                #hspi.tx_ready,
-                #hspi.tx_req,
-                hspi.rx_act,
-                #hspi.tx_valid,
-                hspi.rx_valid,
-                hspi.hd.i,
+                hspi_pads.tx_ack,
+                hspi_pads.tx_ready,
+
+                hspi_pads.tx_req,
+                hspi_pads.rx_act,
+
+                hspi_pads.tx_valid,
+                hspi_pads.rx_valid,
+            ]
+            if transmit:
+                signals = [hspi_tx.state] + signals + [
+                    hspi_pads.hd.oe,
+                    hspi_pads.hd.o,
+                ]
+            else:
+                signals += [
+                hspi_pads.hd.i,
             ]
 
             signals_bits = sum([s.width for s in signals])
-            depth = 3 * 8 * 1024 #int(33*8*1024/signals_bits)
+            depth = 2 * 8 * 1024 #int(33*8*1024/signals_bits)
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
@@ -121,8 +152,12 @@ class ColorlightHSPI(Elaboratable):
             m.d.comb += [
                 stream_ep.stream.stream_eq(ila.stream),
                 ila.trigger.eq(1),
-                ila.enable.eq(hspi.rx_act),
             ]
+            if transmit:
+                m.d.comb += ila.enable.eq(hspi_pads.tx_req),
+            else:
+                m.d.comb += ila.enable.eq(hspi_pads.rx_act),
+
 
             ILACoreParameters(ila).pickle()
 

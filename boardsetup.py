@@ -159,6 +159,8 @@ class ColorlightDomainGenerator(Elaboratable):
             ClockSignal("sync")    .eq(ClockSignal("usb")),
             ClockSignal("hspi")    .eq(hspi_feedback),
 
+            hspi_clocks.tx_clk.eq(ClockSignal("hspi")),
+
             reset.eq(~(main_locked)),
         ]
 
