@@ -184,7 +184,8 @@ btb_upper = [None,   None,   GND, "HD12",   "HD13",  "HD14",  "HD15",
                              GND, "HD16",   "HD17",  "HD18",  "HD19",
                              GND, "HD20",   "HD21",  "HD22",  "HD23",
                              GND, "HD24",   "HD25",  "HD26",  "HD27",
-                             GND, "HD28",   "HD29",  "HD30",  "HD31"]
+                             GND, "HD28",   "HD29",  "HD30",  "HD31",
+                             GND, "LED1",   "LED2"] # these can't be connected to the baseboards
 
 btb_lower = ["HD10", "HD11", GND, "HRCLK", "HRACT", "HRVLD", "HTRDY",
                              GND, "HD0",     "HD1",   "HD2",   "HD3",
@@ -225,6 +226,12 @@ class ColorlightHSPIPlatform(ColorlightQMTechPlatform, LUNAPlatform):
             Resource("hspi-clocks", 0,
                 Subsignal("tx_clk",    Pins(control_pin('HRCLK'), dir="o")),
                 Subsignal("rx_clk",    Pins(control_pin('HTCLK'), dir="i")),
+                Attrs(IO_TYPE="LVCMOS33")
+            ),
+
+            Resource("debug", 0,
+                Subsignal("led1", Pins("J_3:57", dir="i")),
+                Subsignal("led2", Pins("J_3:58", dir="i")),
                 Attrs(IO_TYPE="LVCMOS33")
             ),
 

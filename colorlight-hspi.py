@@ -123,7 +123,12 @@ class ColorlightHSPI(Elaboratable):
                 (setup.type == USBRequestType.RESERVED)
             control_ep.add_request_handler(StallOnlyRequestHandler(stall_condition))
 
+            debug = platform.request("debug")
+
             signals = [
+                debug.led1,
+                debug.led2,
+
                 hspi_pads.tx_ack,
                 hspi_pads.tx_ready,
 
@@ -133,6 +138,7 @@ class ColorlightHSPI(Elaboratable):
                 hspi_pads.tx_valid,
                 hspi_pads.rx_valid,
             ]
+
             if transmit:
                 signals = [hspi_tx.state] + signals + [
                     hspi_pads.hd.oe,
@@ -149,6 +155,7 @@ class ColorlightHSPI(Elaboratable):
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
+                    sample_rate=96e6,
                     sample_depth=depth,
                     domain="hspi", o_domain="usb",
                     samples_pretrigger=256,
