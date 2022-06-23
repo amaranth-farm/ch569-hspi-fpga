@@ -1,34 +1,45 @@
 [*]
 [*] GTKWave Analyzer v3.4.0 (w)1999-2022 BSI
-[*] Thu Jun  2 20:33:03 2022
+[*] Thu Jun 23 21:59:41 2022
 [*]
-[dumpfile] "/devel/riscv/ch569/amaranth-hspi/test_HSPITransmitterTest_test_hspi_tx.vcd"
-[dumpfile_mtime] "Thu Jun  2 20:17:46 2022"
-[dumpfile_size] 823769
-[savefile] "/devel/riscv/ch569/amaranth-hspi/hspi-transmitter.gtkw"
-[timestart] 3997110
+[dumpfile] "test_HSPITransmitterTest_test_hspi_tx.vcd"
+[dumpfile_mtime] "Thu Jun 23 21:56:46 2022"
+[dumpfile_size] 333467
+[savefile] "hspi-transmitter.gtkw"
+[timestart] 0
 [size] 3828 2090
 [pos] -1 -1
-*-14.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+*-16.000000 346300 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
 [treeopen] bench.
 [treeopen] bench.top.
 [sst_width] 347
-[signals_width] 285
+[signals_width] 405
 [sst_expanded] 1
 [sst_vpaned_height] 658
 @28
 bench.top.clk
+@200
+-Input
+@28
+bench.top.tx_data_in__valid
+bench.top.tx_data_in__ready
+@23
+bench.top.tx_data_in__payload[31:0]
+@28
+bench.top.tx_data_in__first
+bench.top.tx_data_in__last
+@200
+-HSPI TX
+@28
 bench.top.fsm_state
 @22
 bench.top.sequence_nr[25:0]
-bench.top.data[31:0]
 @200
 -CRC
 @22
 bench.top.crc.data_in[31:0]
-@29
-bench.top.crc.reset_in
 @28
+bench.top.crc.reset_in
 bench.top.crc.enable_in
 @22
 bench.top.crc.crc_out[31:0]

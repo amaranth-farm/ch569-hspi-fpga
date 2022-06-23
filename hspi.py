@@ -62,20 +62,25 @@ class HSPIInterface(Record):
         ("rx_valid",  1, DIR_FANIN),
     ]
 
-    def __init__(self):
-        super().__init__(self.LAYOUT)
+    def __init__(self, name=None):
+        super().__init__(self.LAYOUT, name=name)
 
 class HSPITransmitter(Elaboratable):
-    def __init__(self):
-        self.hspi_out = HSPIInterface()
+    def __init__(self, name=None):
+        self.user_id0_in = Signal(26)
+        self.user_id1_in = Signal(26)
+        self.stream_in   = StreamInterface(name="tx_data_in", payload_width=32)
+        self.hspi_out    = HSPIInterface(name=name)
 
-        self.state = Signal(3)
+        self.state       = Signal(3)
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
         m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
 
-        hspi = self.hspi_out
+        hspi      = self.hspi_out
+        stream_in = self.stream_in
+        last_seen = Signal()
 
         m.d.comb += [
             hspi.hd.oe.eq(hspi.tx_valid),
@@ -83,17 +88,24 @@ class HSPITransmitter(Elaboratable):
 
         header       = Signal(32)
         sequence_nr  = Signal(26)
-        data         = Signal(32)
+        # maximum frame size is 4096 in
+        word_index   = Signal(range(4096))
 
         m.d.comb += [
             header.eq(Cat(
-                Mux(~sequence_nr[0], Const(0x3ABCDEF, 26), Const(0x3456789, 26)),
+                Mux(~sequence_nr[0], self.user_id0_in, self.user_id1_in),
                 sequence_nr[0:4],
                 Const(0b11, 2)))
         ]
 
         with m.FSM() as fsm:
             m.d.comb += self.state.eq(fsm.state)
+
+            with m.State("WAIT_INPUT"):
+                with m.If(stream_in.valid & stream_in.first):
+                    m.d.sync += last_seen.eq(0)
+                    m.next = "START"
+
             with m.State("START"):
                 m.d.sync += hspi.tx_req.eq(1)
                 m.next = "WAIT_TX_READY"
@@ -104,31 +116,39 @@ class HSPITransmitter(Elaboratable):
 
             with m.State("TX_HEADER"):
                 m.d.comb += [
+                    hspi.hd.oe.eq(1),
                     hspi.hd.o.eq(header),
                     hspi.tx_valid.eq(1),
 
                     crc.data_in.eq(header),
                     crc.enable_in.eq(1),
                 ]
-                m.d.sync += sequence_nr.eq(sequence_nr + 1)
 
                 m.next = "TX_DATA"
 
             with m.State("TX_DATA"):
                 m.d.comb += [
-                    hspi.hd.o.eq(data),
-                    hspi.tx_valid.eq(1),
+                    stream_in.ready.eq(1),
 
-                    crc.data_in.eq(data),
+                    hspi.hd.oe.eq(1),
+                    hspi.hd.o.eq(stream_in.payload),
+                    hspi.tx_valid.eq(stream_in.valid),
+
+                    crc.data_in.eq(stream_in.data),
                     crc.enable_in.eq(1),
                 ]
-                m.d.sync += data.eq(data + 1)
 
-                with m.If((data[:7]) == 0x7f):
+                with m.If(stream_in.valid):
+                    m.d.sync += word_index.eq(word_index + 1)
+
+                with m.If(stream_in.last | (word_index == 4095)):
+                    with m.If(stream_in.last):
+                        m.d.sync += last_seen.eq(1)
                     m.next = "TX_CRC"
 
             with m.State("TX_CRC"):
                 m.d.comb += [
+                    hspi.hd.oe.eq(1),
                     hspi.hd.o.eq(crc.crc_out),
                     hspi.tx_valid.eq(1),
                     crc.reset_in.eq(1),
@@ -137,24 +157,19 @@ class HSPITransmitter(Elaboratable):
                 m.next = "WAIT_HTRDY"
 
             with m.State("WAIT_HTRDY"):
+                m.d.sync += sequence_nr.eq(sequence_nr + 1)
                 with m.If(~hspi.tx_ready):
-                    m.next = "DONE"
+                    with m.If(~last_seen):
+                        m.next = "WAIT_LAST"
+                    with m.Else():
+                        m.next = "WAIT_INPUT"
 
-            with m.State("DONE"):
-                with m.If(data >= 8192):
-                    m.d.sync += data.eq(0)
-                    m.next = "PAUSE"
-                with m.Else():
-                    m.next = "START"
-
-            with m.State("PAUSE"):
-                m.d.sync += data.eq(data + 1)
-                with m.If(data[26]):
-                    m.d.sync += data.eq(0)
-                    m.next = "START"
+            with m.State("WAIT_LAST"):
+                m.d.comb += stream_in.ready.eq(1)
+                with m.If(stream_in.last):
+                    m.next = "WAIT_INPUT"
 
         return m
-
 
 class HSPIReceiver(Elaboratable):
     def __init__(self):
@@ -193,8 +208,33 @@ class HSPITransmitterTest(GatewareTestCase):
     @sync_test_case
     def test_hspi_tx(self):
         dut = self.dut
+        data = 0
+
         for i in range(5):
             yield from self.advance_cycles(3)
             yield dut.hspi_out.tx_ready.eq(1)
-            yield from self.advance_cycles(135)
+            yield dut.user_id0_in.eq(0x3ABCDEF)
+            yield dut.user_id1_in.eq(0x3456789)
+            yield dut.stream_in.payload.eq(data)
+            yield dut.stream_in.first.eq(1)
+            yield dut.stream_in.valid.eq(1)
+            yield
+            yield
+            yield
+            yield
+
+            for i in range(0x80):
+                yield dut.stream_in.first.eq(1 if i == 0 else 0)
+                yield dut.stream_in.payload.eq(data)
+                if i == 0x7f:
+                    yield dut.stream_in.last.eq(1)
+                else:
+                    yield dut.stream_in.last.eq(0)
+                yield
+                data += 1
+
+            yield dut.stream_in.last.eq(0)
+            yield dut.stream_in.valid.eq(0)
+            yield
+
             yield dut.hspi_out.tx_ready.eq(0)
