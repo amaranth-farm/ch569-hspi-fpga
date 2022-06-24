@@ -322,6 +322,7 @@ class HSPIReceiverTest(GatewareTestCase):
         yield hspi.rx_valid.eq(0)
         yield hspi.rx_act.eq(0)
         yield
+        self.assertEqual((yield dut.stream_out.crc_error), 0)
         yield
         yield
         yield
