@@ -1,0 +1,55 @@
+[*]
+[*] GTKWave Analyzer v3.4.0 (w)1999-2022 BSI
+[*] Fri Jun 24 11:38:35 2022
+[*]
+[dumpfile] "test_HSPIReceiverTest_test_hspi_rx.vcd"
+[dumpfile_mtime] "Fri Jun 24 11:37:03 2022"
+[dumpfile_size] 170503
+[savefile] "hspi-receiver.gtkw"
+[timestart] 3840
+[size] 3828 2090
+[pos] -1 -1
+*-14.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] bench.
+[treeopen] bench.top.
+[sst_width] 590
+[signals_width] 420
+[sst_expanded] 1
+[sst_vpaned_height] 658
+@28
+bench.top.clk
+@200
+-HSPI In
+@28
+bench.top.rx_act
+bench.top.tx_ack
+bench.top.rx_valid
+@22
+bench.top.hd__i[31:0]
+@200
+-HSPI-Receiver
+@28
+bench.top.fsm_state
+bench.top.enable_in
+@22
+bench.top.data_in[31:0]
+bench.top.crc_out[31:0]
+@28
+bench.top.crc_equal
+@200
+-Output
+@22
+bench.top.rx_data_out__payload[31:0]
+@28
+bench.top.rx_data_out__valid
+bench.top.rx_data_out__first
+bench.top.rx_data_out__last
+@29
+bench.top.rx_data_out__crc_error
+@22
+bench.top.sequence_nr_out[3:0]
+bench.top.user_data_out[25:0]
+@28
+bench.top.tll_2b_out[1:0]
+[pattern_trace] 1
+[pattern_trace] 0

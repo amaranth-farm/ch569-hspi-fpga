@@ -1,8 +1,12 @@
 import operator
 from functools import reduce
-from amaranth import *
-from amaranth.hdl.rec import Layout, DIR_FANIN, DIR_FANOUT
-from amaranth.build import Platform
+
+from amaranth          import *
+from amaranth.lib.cdc  import FFSynchronizer
+from amaranth.lib.fifo import SyncFIFO
+from amaranth.hdl.ast  import Past
+from amaranth.hdl.rec  import Layout, DIR_FANIN, DIR_FANOUT
+from amaranth.build    import Platform
 
 from amlib.stream import StreamInterface
 
@@ -173,29 +177,73 @@ class HSPITransmitter(Elaboratable):
 
 class HSPIReceiver(Elaboratable):
     def __init__(self):
-        self.hspi_in = HSPIInterface()
-        self.state = Signal(2)
+        self.hspi_in           = HSPIInterface()
+        self.stream_out        = StreamInterface(name="rx_data_out", payload_width=32, extra_fields=[("crc_error", 1)])
+        self.packet_done_out   = Signal(1)
+        self.tll_2b_out        = Signal(2)
+        self.sequence_nr_out   = Signal(4)
+        self.user_data_out     = Signal(26)
+        self.num_words_out     = Signal(13)
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
+        hspi       = self.hspi_in
+        stream_out = self.stream_out
 
-        hspi = self.hspi_in
+        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
 
-        m.d.comb += [
-            hspi.hd.oe.eq(0),
-        ]
+        word_pos  = Signal(13)
+        crc_equal = Signal()
+        valid     = Signal()
 
         with m.FSM() as fsm:
-            m.d.comb += self.state.eq(fsm.state)
-            with m.State("START"):
+            m.d.comb += [
+                stream_out.payload .eq(Past(hspi.hd.i, clocks=2)),
+                stream_out.valid   .eq(Past(valid,     clocks=2)),
+            ]
+
+            with m.State("WAIT"):
+                m.d.comb += stream_out.valid.eq(0),
                 with m.If(hspi.rx_act):
-                    m.d.sync += hspi.tx_ack.eq(1)
+                    m.d.sync += [
+                        word_pos.eq(0),
+                        hspi.tx_ack.eq(1),
+                    ]
                     m.next = "RX"
 
             with m.State("RX"):
+                with m.If(hspi.rx_valid):
+                    m.d.sync += word_pos.eq(word_pos + 1)
+                    m.d.comb += [
+                        crc.enable_in.eq(1),
+                        crc.data_in.eq(hspi.hd.i),
+                    ]
+                    m.d.sync += crc_equal.eq(crc.crc_out == hspi.hd.i)
+
+                # extract header
+                with m.If(word_pos == 0):
+                    m.d.sync += Cat(self.user_data_out, self.sequence_nr_out, self.tll_2b_out).eq(hspi.hd.i)
+
+                # don't include header in stream data.
+                # valid is delayed by 2, so this comes at the same time as first
+                with m.If(word_pos >= 1):
+                    m.d.comb += valid.eq(hspi.rx_valid)
+
+                with m.If(word_pos == 3):
+                    m.d.comb += stream_out.first.eq(1)
+
                 with m.If(~hspi.rx_act):
-                    m.d.sync += hspi.tx_ack.eq(0)
-                    m.next = "START"
+                    m.d.comb += [
+                        stream_out.last.eq(1),
+                        self.packet_done_out.eq(1),
+                        stream_out.crc_error.eq(~crc_equal),
+                        self.num_words_out.eq(word_pos - 1),
+                    ]
+                    m.d.sync += [
+                        hspi.tx_ack.eq(0),
+                        crc_equal.eq(0),
+                    ]
+                    m.next = "WAIT"
 
         return m
 
@@ -238,3 +286,42 @@ class HSPITransmitterTest(GatewareTestCase):
             yield
 
             yield dut.hspi_out.tx_ready.eq(0)
+
+class HSPIReceiverTest(GatewareTestCase):
+    FRAGMENT_UNDER_TEST = HSPIReceiver
+    FRAGMENT_ARGUMENTS  = dict()
+
+    @sync_test_case
+    def test_hspi_rx(self):
+        dut = self.dut
+        hspi = dut.hspi_in
+        data = 0
+
+        yield from self.advance_cycles(3)
+        yield hspi.rx_act.eq(1)
+        yield
+        yield
+        yield
+        yield hspi.hd.i.eq(0xc3abcdef)
+        yield hspi.rx_valid.eq(1)
+        yield
+        for i in range(0x40):
+            yield hspi.hd.i.eq(i)
+            yield
+        yield hspi.rx_valid.eq(0)
+        yield
+        yield
+        yield
+        yield hspi.rx_valid.eq(1)
+        for i in range(0x40, 0x80):
+            yield hspi.hd.i.eq(i)
+            yield
+        yield hspi.hd.i.eq(0x1106c501)
+        yield
+        yield hspi.hd.i.eq(0)
+        yield hspi.rx_valid.eq(0)
+        yield hspi.rx_act.eq(0)
+        yield
+        yield
+        yield
+        yield
