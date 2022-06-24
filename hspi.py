@@ -79,6 +79,24 @@ class HSPITransmitter(Elaboratable):
 
         self.state       = Signal(3)
 
+    def connect_to_pads(self, hspi_pads):
+        hspi_out = self.hspi_out
+
+        return [
+            # HSPI inputs
+            hspi_out.tx_ready.eq(hspi_pads.tx_ready),
+            hspi_out.rx_act.eq(hspi_pads.rx_act),
+            hspi_out.rx_valid.eq(hspi_pads.rx_valid),
+            hspi_out.hd.i.eq(hspi_pads.hd.i),
+
+            # HSPI outputs
+            hspi_pads.tx_ack.eq(hspi_out.tx_ack),
+            hspi_pads.tx_req.eq(hspi_out.tx_req),
+            hspi_pads.tx_valid.eq(hspi_out.tx_valid),
+            hspi_pads.hd.oe.eq(hspi_out.hd.oe),
+            hspi_pads.hd.o.eq(hspi_out.hd.o),
+        ]
+
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
         m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
@@ -182,6 +200,24 @@ class HSPIReceiver(Elaboratable):
         self.sequence_nr_out   = Signal(4)
         self.user_data_out     = Signal(26)
         self.num_words_out     = Signal(13)
+
+    def connect_to_pads(self, hspi_pads):
+        hspi_in = self.hspi_in
+
+        return [
+            # HSPI inputs
+            hspi_in.tx_ready.eq(hspi_pads.tx_ready),
+            hspi_in.rx_act.eq(hspi_pads.rx_act),
+            hspi_in.rx_valid.eq(hspi_pads.rx_valid),
+            hspi_in.hd.i.eq(hspi_pads.hd.i),
+
+            # HSPI outputs
+            hspi_pads.tx_ack.eq(hspi_in.tx_ack),
+            hspi_pads.tx_req.eq(hspi_in.tx_req),
+            hspi_pads.tx_valid.eq(hspi_in.tx_valid),
+            hspi_pads.hd.oe.eq(hspi_in.hd.oe),
+            hspi_pads.hd.o.eq(hspi_in.hd.o),
+        ]
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
