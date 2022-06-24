@@ -71,6 +71,7 @@ class HSPIInterface(Record):
 
 class HSPITransmitter(Elaboratable):
     def __init__(self, name=None):
+        self.tll_2b_in   = Signal(2)
         self.user_id0_in = Signal(26)
         self.user_id1_in = Signal(26)
         self.stream_in   = StreamInterface(name="tx_data_in", payload_width=32)
@@ -86,10 +87,6 @@ class HSPITransmitter(Elaboratable):
         stream_in = self.stream_in
         last_seen = Signal()
 
-        m.d.comb += [
-            hspi.hd.oe.eq(hspi.tx_valid),
-        ]
-
         header       = Signal(32)
         sequence_nr  = Signal(26)
         # maximum frame size is 4096 in
@@ -99,7 +96,7 @@ class HSPITransmitter(Elaboratable):
             header.eq(Cat(
                 Mux(~sequence_nr[0], self.user_id0_in, self.user_id1_in),
                 sequence_nr[0:4],
-                Const(0b11, 2)))
+                self.tll_2b_in))
         ]
 
         with m.FSM() as fsm:
@@ -132,6 +129,7 @@ class HSPITransmitter(Elaboratable):
 
             with m.State("TX_DATA"):
                 m.d.comb += [
+                    hspi.hd.oe.eq(1),
                     stream_in.ready.eq(1),
 
                     hspi.hd.oe.eq(1),
