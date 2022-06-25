@@ -60,48 +60,35 @@ class ColorlightHSPI(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        transmit = True
-
         # Generate our domain clocks/resets.
         m.submodules.car = platform.clock_domain_generator()
 
         hspi_pads = platform.request("hspi", 0)
 
+        m.submodules.hspi_tx      = hspi_tx       = HSPITransmitter(domain="hspi")
+        m.submodules.hspi_rx      = hspi_rx       = HSPIReceiver(domain="hspi")
+        m.submodules.looback_fifo = loopback_fifo = DomainRenamer("hspi")(SyncFIFOBuffered(width=34, depth=4096))
 
-        if transmit:
-            m.submodules.hspi_tx = hspi_tx = DomainRenamer("hspi")(HSPITransmitter())
-            m.d.comb += [
-                # HSPI inputs
-                hspi_tx.hspi_out.tx_ready.eq(hspi_pads.tx_ready),
-                hspi_tx.hspi_out.rx_act.eq(hspi_pads.rx_act),
-                hspi_tx.hspi_out.rx_valid.eq(hspi_pads.rx_valid),
-                hspi_tx.hspi_out.hd.i.eq(hspi_pads.hd.i),
+        m.d.comb += [
+            ## connect HSPI receiver
+            *hspi_rx.connect_to_pads(hspi_pads),
+            *connect_stream_to_fifo(hspi_rx.stream_out, loopback_fifo, firstBit=-2, lastBit=-1),
 
-                # HSPI outputs
-                hspi_pads.tx_ack.eq(hspi_tx.hspi_out.tx_ack),
-                hspi_pads.tx_req.eq(hspi_tx.hspi_out.tx_req),
-                hspi_pads.tx_valid.eq(hspi_tx.hspi_out.tx_valid),
-                hspi_pads.hd.oe.eq(hspi_tx.hspi_out.hd.oe),
-                hspi_pads.hd.o.eq(hspi_tx.hspi_out.hd.o),
-            ]
-        else:
-            m.submodules.hspi_rx = hspi_rx = DomainRenamer("hspi")(HSPIReceiver())
-            m.d.comb += [
-                # HSPI inputs
-                hspi_rx.hspi_in.tx_ready.eq(hspi_pads.tx_ready),
-                hspi_rx.hspi_in.rx_act.eq(hspi_pads.rx_act),
-                hspi_rx.hspi_in.rx_valid.eq(hspi_pads.rx_valid),
-                hspi_rx.hspi_in.hd.i.eq(hspi_pads.hd.i),
+            ## connect HSPI transmitter
+            hspi_tx.user_id0_in.eq(0x3ABCDEF),
+            hspi_tx.user_id1_in.eq(0x3456789),
+            hspi_tx.tll_2b_in.eq(0),
 
-                # HSPI outputs
-                hspi_pads.tx_ack.eq(hspi_rx.hspi_in.tx_ack),
-                hspi_pads.tx_req.eq(hspi_rx.hspi_in.tx_req),
-                hspi_pads.tx_valid.eq(hspi_rx.hspi_in.tx_valid),
-                hspi_pads.hd.oe.eq(hspi_rx.hspi_in.hd.oe),
-                hspi_pads.hd.o.eq(hspi_rx.hspi_in.hd.o),
-            ]
+            *hspi_tx.connect_to_pads(hspi_pads),
+            *connect_fifo_to_stream(loopback_fifo, hspi_tx.stream_in, firstBit=-2, lastBit=-1),
+        ]
 
         if self.USE_ILA:
+            trace_transmit = True
+            trace_receive  = False
+            trace_loopback = True
+            use_enable     = False
+
             ulpi = platform.request(platform.default_usb_connection)
             m.submodules.usb = usb = USBDevice(bus=ulpi)
 
@@ -142,19 +129,33 @@ class ColorlightHSPI(Elaboratable):
                 hspi_pads.rx_valid,
             ]
 
-            if transmit:
+            if trace_transmit:
                 signals = [hspi_tx.state] + signals + [
                     hspi_pads.hd.oe,
                     hspi_pads.hd.o,
                 ]
-            else:
-                signals =[hspi_rx.state] + signals + [
+
+            if trace_receive:
+                signals = [hspi_rx.state] + signals + [
                 hspi_pads.hd.i,
             ]
 
+            if trace_transmit:
+                traced_stream = hspi_tx.stream_in
+            else:
+                traced_stream = hspi_rx.stream_out
+
+            if trace_loopback:
+                signals += [
+                    traced_stream.payload,
+                    traced_stream.valid,
+                    traced_stream.ready,
+                    traced_stream.first,
+                    traced_stream.last,
+                ]
+
             signals_bits = sum([s.width for s in signals])
-            depth = 2 * 8 * 1024 #int(33*8*1024/signals_bits)
-            use_enable = False
+            depth = 1 * 8 * 1024 #int(33*8*1024/signals_bits)
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
@@ -175,15 +176,19 @@ class ColorlightHSPI(Elaboratable):
 
             if use_enable:
                 m.d.comb += ila.trigger.eq(1),
-                if transmit:
-                    m.d.comb += ila.enable.eq(hspi_pads.tx_req),
-                else:
-                    m.d.comb += ila.enable.eq(hspi_pads.rx_act),
+                if trace_transmit:
+                    m.d.comb += ila.enable.eq(hspi_pads.tx_req)
+                if trace_receive:
+                    m.d.comb += ila.enable.eq(hspi_pads.rx_act)
+                if trace_loopback:
+                    m.d.comb += ila.enable.eq(traced_stream.valid)
             else:
-                if transmit:
-                    m.d.comb += ila.trigger.eq(hspi_pads.tx_req),
-                else:
-                    m.d.comb += ila.trigger.eq(hspi_pads.rx_act),
+                if trace_transmit:
+                    m.d.comb += ila.trigger.eq(hspi_pads.tx_req)
+                if trace_receive:
+                    m.d.comb += ila.trigger.eq(hspi_pads.rx_act)
+                if trace_loopback:
+                    m.d.comb += ila.trigger.eq(traced_stream.valid)
 
 
             ILACoreParameters(ila).pickle()
