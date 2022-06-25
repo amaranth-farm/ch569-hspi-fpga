@@ -1,11 +1,14 @@
 import os
 import subprocess
 
-from amaranth         import *
-from amaranth.lib.cdc import ResetSynchronizer
+from amaranth          import *
+from amaranth.lib.cdc  import ResetSynchronizer
+from amaranth.lib.fifo import SyncFIFOBuffered
 
 from amaranth.build import *
 from amaranth.vendor.lattice_ecp5 import *
+
+from amlib.stream import connect_fifo_to_stream, connect_stream_to_fifo
 
 from usb_protocol.types                import USBRequestType, USBDirection, USBStandardRequests
 from usb_protocol.emitters             import DeviceDescriptorCollection

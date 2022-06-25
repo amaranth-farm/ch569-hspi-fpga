@@ -70,7 +70,7 @@ class HSPIInterface(Record):
         super().__init__(self.LAYOUT, name=name)
 
 class HSPITransmitter(Elaboratable):
-    def __init__(self, name=None):
+    def __init__(self, name=None, domain=None):
         self.tll_2b_in   = Signal(2)
         self.user_id0_in = Signal(26)
         self.user_id1_in = Signal(26)
@@ -78,6 +78,8 @@ class HSPITransmitter(Elaboratable):
         self.hspi_out    = HSPIInterface(name=name)
 
         self.state       = Signal(3)
+
+        self.domain = domain
 
     def connect_to_pads(self, hspi_pads):
         hspi_out = self.hspi_out
@@ -95,7 +97,11 @@ class HSPITransmitter(Elaboratable):
 
     def elaborate(self, platform: Platform) -> Module:
         m = Module()
-        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
+        domain = "sync" if self.domain is None else self.domain
+        sync   = m.d.__getattr__(domain)
+        comb   = m.d.comb
+
+        m.submodules.crc = crc = DomainRenamer(domain)(CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True))
 
         hspi      = self.hspi_out
         stream_in = self.stream_in
@@ -106,23 +112,23 @@ class HSPITransmitter(Elaboratable):
         # maximum frame size is 4096 in
         word_index   = Signal(range(4096))
 
-        m.d.comb += [
+        comb += [
             header.eq(Cat(
                 Mux(~sequence_nr[0], self.user_id0_in, self.user_id1_in),
                 sequence_nr[0:4],
                 self.tll_2b_in))
         ]
 
-        with m.FSM() as fsm:
-            m.d.comb += self.state.eq(fsm.state)
+        with m.FSM(domain=domain) as fsm:
+            comb += self.state.eq(fsm.state)
 
             with m.State("WAIT_INPUT"):
                 with m.If(stream_in.valid & stream_in.first):
-                    m.d.sync += last_seen.eq(0)
+                    sync += last_seen.eq(0)
                     m.next = "START"
 
             with m.State("START"):
-                m.d.sync += hspi.tx_req.eq(1)
+                sync += hspi.tx_req.eq(1)
                 m.next = "WAIT_TX_READY"
 
             with m.State("WAIT_TX_READY"):
@@ -130,7 +136,7 @@ class HSPITransmitter(Elaboratable):
                     m.next = "TX_HEADER"
 
             with m.State("TX_HEADER"):
-                m.d.comb += [
+                comb += [
                     hspi.hd.oe.eq(1),
                     hspi.hd.o.eq(header),
                     hspi.tx_valid.eq(1),
@@ -142,7 +148,7 @@ class HSPITransmitter(Elaboratable):
                 m.next = "TX_DATA"
 
             with m.State("TX_DATA"):
-                m.d.comb += [
+                comb += [
                     hspi.hd.oe.eq(1),
                     stream_in.ready.eq(1),
 
@@ -155,25 +161,25 @@ class HSPITransmitter(Elaboratable):
                 ]
 
                 with m.If(stream_in.valid):
-                    m.d.sync += word_index.eq(word_index + 1)
+                    sync += word_index.eq(word_index + 1)
 
                 with m.If(stream_in.last | (word_index == 4095)):
                     with m.If(stream_in.last):
-                        m.d.sync += last_seen.eq(1)
+                        sync += last_seen.eq(1)
                     m.next = "TX_CRC"
 
             with m.State("TX_CRC"):
-                m.d.comb += [
+                comb += [
                     hspi.hd.oe.eq(1),
                     hspi.hd.o.eq(crc.crc_out),
                     hspi.tx_valid.eq(1),
                     crc.reset_in.eq(1),
                 ]
-                m.d.sync += hspi.tx_req.eq(0)
+                sync += hspi.tx_req.eq(0)
                 m.next = "WAIT_HTRDY"
 
             with m.State("WAIT_HTRDY"):
-                m.d.sync += sequence_nr.eq(sequence_nr + 1)
+                sync += sequence_nr.eq(sequence_nr + 1)
                 with m.If(~hspi.tx_ready):
                     with m.If(~last_seen):
                         m.next = "WAIT_LAST"
@@ -181,14 +187,14 @@ class HSPITransmitter(Elaboratable):
                         m.next = "WAIT_INPUT"
 
             with m.State("WAIT_LAST"):
-                m.d.comb += stream_in.ready.eq(1)
+                comb += stream_in.ready.eq(1)
                 with m.If(stream_in.last):
                     m.next = "WAIT_INPUT"
 
         return m
 
 class HSPIReceiver(Elaboratable):
-    def __init__(self):
+    def __init__(self, domain=None):
         self.hspi_in           = HSPIInterface()
         self.stream_out        = StreamInterface(name="rx_data_out", payload_width=32, extra_fields=[("crc_error", 1)])
         self.packet_done_out   = Signal(1)
@@ -198,6 +204,8 @@ class HSPIReceiver(Elaboratable):
         self.num_words_out     = Signal(13)
 
         self.state       = Signal(3)
+
+        self.domain = domain
 
     def connect_to_pads(self, hspi_pads):
         hspi_in = self.hspi_in
@@ -216,24 +224,27 @@ class HSPIReceiver(Elaboratable):
         m = Module()
         hspi       = self.hspi_in
         stream_out = self.stream_out
+        domain     = "sync" if self.domain is None else self.domain
+        sync       = m.d.__getattr__(domain)
+        comb       = m.d.comb
 
-        m.submodules.crc = crc = CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True)
+        m.submodules.crc = crc = DomainRenamer(domain)(CRC(polynomial=0x04C11DB7, crc_size=32, datawidth=32, delay=True))
 
         word_pos  = Signal(13)
         crc_equal = Signal()
         valid     = Signal()
 
-        with m.FSM() as fsm:
-            m.d.comb += [
+        with m.FSM(domain=domain) as fsm:
+            comb += [
                 self.state.eq(fsm.state),
-                stream_out.payload .eq(Past(hspi.hd.i, clocks=2)),
-                stream_out.valid   .eq(Past(valid,     clocks=2)),
+                stream_out.payload .eq(Past(hspi.hd.i, clocks=2, domain=domain)),
+                stream_out.valid   .eq(Past(valid,     clocks=2, domain=domain)),
             ]
 
             with m.State("WAIT"):
-                m.d.comb += stream_out.valid.eq(0),
+                comb += stream_out.valid.eq(0),
                 with m.If(hspi.rx_act):
-                    m.d.sync += [
+                    sync += [
                         word_pos.eq(0),
                         hspi.tx_ack.eq(1),
                     ]
@@ -241,33 +252,33 @@ class HSPIReceiver(Elaboratable):
 
             with m.State("RX"):
                 with m.If(hspi.rx_valid):
-                    m.d.sync += word_pos.eq(word_pos + 1)
-                    m.d.comb += [
+                    sync += word_pos.eq(word_pos + 1)
+                    comb += [
                         crc.enable_in.eq(1),
                         crc.data_in.eq(hspi.hd.i),
                     ]
-                    m.d.sync += crc_equal.eq(crc.crc_out == hspi.hd.i)
+                    sync += crc_equal.eq(crc.crc_out == hspi.hd.i)
 
                 # extract header
                 with m.If(word_pos == 0):
-                    m.d.sync += Cat(self.user_data_out, self.sequence_nr_out, self.tll_2b_out).eq(hspi.hd.i)
+                    sync += Cat(self.user_data_out, self.sequence_nr_out, self.tll_2b_out).eq(hspi.hd.i)
 
                 # don't include header in stream data.
                 # valid is delayed by 2, so this comes at the same time as first
                 with m.If(word_pos >= 1):
-                    m.d.comb += valid.eq(hspi.rx_valid)
+                    comb += valid.eq(hspi.rx_valid)
 
                 with m.If(word_pos == 3):
-                    m.d.comb += stream_out.first.eq(1)
+                    comb += stream_out.first.eq(1)
 
                 with m.If(~hspi.rx_act):
-                    m.d.comb += [
+                    comb += [
                         stream_out.last.eq(1),
                         self.packet_done_out.eq(1),
                         stream_out.crc_error.eq(~crc_equal),
                         self.num_words_out.eq(word_pos - 1),
                     ]
-                    m.d.sync += [
+                    sync += [
                         hspi.tx_ack.eq(0),
                         crc_equal.eq(0),
                     ]
