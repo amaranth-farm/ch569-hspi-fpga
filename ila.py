@@ -7,5 +7,5 @@ from amlib.debug.ila                import ILACoreParameters
 dev=usb.core.find(idVendor=0x1209, idProduct=0x4711)
 print(dev)
 
-frontend = USBIntegratedLogicAnalyzerFrontend(ila=ILACoreParameters.unpickle(), idVendor=0x1209, idProduct=0x4711, endpoint_no=1)
+frontend = USBIntegratedLogicAnalyzerFrontend(ila=ILACoreParameters.unpickle(), delay=0, idVendor=0x1209, idProduct=0x4711, endpoint_no=1)
 frontend.interactive_display()
