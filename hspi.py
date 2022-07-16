@@ -71,15 +71,16 @@ class HSPIInterface(Record):
 
 class HSPITransmitter(Elaboratable):
     def __init__(self, name=None, domain=None):
-        self.send_ack     = Signal()
-        self.ack_done     = Signal()
-        self.tll_2b_in    = Signal(2)
-        self.user_id0_in  = Signal(26)
-        self.user_id1_in  = Signal(26)
-        self.stream_in    = StreamInterface(name="tx_data_in", payload_width=32)
-        self.hspi_out     = HSPIInterface(name=name)
+        self.send_ack       = Signal()
+        self.ack_done       = Signal()
+        self.tll_2b_in      = Signal(2)
+        self.sequence_nr_in = Signal(4)
+        self.user_id0_in    = Signal(26)
+        self.user_id1_in    = Signal(26)
+        self.stream_in      = StreamInterface(name="tx_data_in", payload_width=32)
+        self.hspi_out       = HSPIInterface(name=name)
 
-        self.state        = Signal(3)
+        self.state          = Signal(3)
 
         self.domain = domain
 
@@ -111,14 +112,14 @@ class HSPITransmitter(Elaboratable):
         last_seen = Signal()
 
         header       = Signal(32)
-        sequence_nr  = Signal(26)
+        user_id      = Signal(26)
         # maximum frame size is 4096 in
         word_index   = Signal(range(4096))
 
         comb += [
             header.eq(Cat(
-                Mux(~sequence_nr[0], self.user_id0_in, self.user_id1_in),
-                sequence_nr[0:4],
+                Mux(~self.sequence_nr_in[0], self.user_id0_in, self.user_id1_in),
+                self.sequence_nr_in,
                 self.tll_2b_in))
         ]
 
@@ -209,7 +210,6 @@ class HSPITransmitter(Elaboratable):
                 m.next = "WAIT_HTRDY"
 
             with m.State("WAIT_HTRDY"):
-                sync += sequence_nr.eq(sequence_nr + 1)
                 with m.If(~hspi.tx_ready):
                     with m.If(~last_seen):
                         m.next = "WAIT_LAST"

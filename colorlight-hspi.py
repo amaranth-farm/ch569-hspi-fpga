@@ -79,6 +79,7 @@ class ColorlightHSPI(Elaboratable):
             hspi_tx.user_id0_in.eq(0x3ABCDEF),
             hspi_tx.user_id1_in.eq(0x3456789),
             hspi_tx.tll_2b_in.eq(0b11),
+            hspi_tx.sequence_nr_in.eq(hspi_rx.sequence_nr_out),
 
             *hspi_tx.connect_to_pads(hspi_pads),
             *connect_fifo_to_stream(loopback_fifo, hspi_tx.stream_in, firstBit=-2, lastBit=-1),
