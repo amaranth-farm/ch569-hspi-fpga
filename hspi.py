@@ -71,13 +71,15 @@ class HSPIInterface(Record):
 
 class HSPITransmitter(Elaboratable):
     def __init__(self, name=None, domain=None):
-        self.tll_2b_in   = Signal(2)
-        self.user_id0_in = Signal(26)
-        self.user_id1_in = Signal(26)
-        self.stream_in   = StreamInterface(name="tx_data_in", payload_width=32)
-        self.hspi_out    = HSPIInterface(name=name)
+        self.send_ack     = Signal()
+        self.ack_done     = Signal()
+        self.tll_2b_in    = Signal(2)
+        self.user_id0_in  = Signal(26)
+        self.user_id1_in  = Signal(26)
+        self.stream_in    = StreamInterface(name="tx_data_in", payload_width=32)
+        self.hspi_out     = HSPIInterface(name=name)
 
-        self.state       = Signal(3)
+        self.state        = Signal(3)
 
         self.domain = domain
 
@@ -86,13 +88,14 @@ class HSPITransmitter(Elaboratable):
 
         return [
             # HSPI inputs
-            hspi_out.tx_ready.eq(hspi_pads.tx_ready),
+            hspi_out.tx_ready .eq(hspi_pads.tx_ready),
+            hspi_out.tx_ack   .eq(hspi_pads.tx_ack),
 
             # HSPI outputs
-            hspi_pads.tx_req.eq(hspi_out.tx_req),
-            hspi_pads.tx_valid.eq(hspi_out.tx_valid),
-            hspi_pads.hd.oe.eq(hspi_out.hd.oe),
-            hspi_pads.hd.o.eq(hspi_out.hd.o),
+            hspi_pads.tx_req   .eq(hspi_out.tx_req),
+            hspi_pads.tx_valid .eq(hspi_out.tx_valid),
+            hspi_pads.hd.oe    .eq(hspi_out.hd.oe),
+            hspi_pads.hd.o     .eq(hspi_out.hd.o),
         ]
 
     def elaborate(self, platform: Platform) -> Module:
@@ -119,21 +122,49 @@ class HSPITransmitter(Elaboratable):
                 self.tll_2b_in))
         ]
 
+        ack_in_process = Signal()
+        rx_complete    = Signal()
+
         with m.FSM(domain=domain) as fsm:
-            comb += self.state.eq(fsm.state)
+            comb += [
+                self.state.eq(fsm.state),
+                rx_complete.eq(~hspi.tx_ack & ~hspi.tx_ready),
+            ]
 
             with m.State("WAIT_INPUT"):
-                with m.If(stream_in.valid & stream_in.first):
+                with m.If(self.send_ack):
+                    sync += ack_in_process.eq(1)
+                    m.next = "START"
+                with m.Elif(stream_in.valid & stream_in.first & rx_complete):
                     sync += last_seen.eq(0)
                     m.next = "START"
 
             with m.State("START"):
-                sync += hspi.tx_req.eq(1)
-                m.next = "WAIT_TX_READY"
+                # wait until an ongoing RX is complete
+                with m.If(rx_complete):
+                    sync += hspi.tx_req.eq(1)
+                    m.next = "WAIT_TX_READY"
 
             with m.State("WAIT_TX_READY"):
                 with m.If(hspi.tx_ready):
-                    m.next = "TX_HEADER"
+                    with m.If(ack_in_process):
+                        m.next = "TX_ACK"
+                    with m.Else():
+                        m.next = "TX_HEADER"
+
+            with m.State("TX_ACK"):
+                comb += [
+                    hspi.hd.oe.eq(1),
+                    hspi.hd.o.eq(0xf0),
+                    hspi.tx_valid.eq(1),
+                ]
+                m.next = "ACK_DONE"
+
+            with m.State("ACK_DONE"):
+                sync += ack_in_process.eq(0)
+                sync += hspi.tx_req.eq(0)
+                comb += self.ack_done.eq(1)
+                m.next = "WAIT_INPUT"
 
             with m.State("TX_HEADER"):
                 comb += [
@@ -149,7 +180,6 @@ class HSPITransmitter(Elaboratable):
 
             with m.State("TX_DATA"):
                 comb += [
-                    hspi.hd.oe.eq(1),
                     stream_in.ready.eq(1),
 
                     hspi.hd.oe.eq(1),
@@ -300,6 +330,7 @@ class HSPITransmitterTest(GatewareTestCase):
         for i in range(5):
             yield from self.advance_cycles(3)
             yield dut.hspi_out.tx_ready.eq(1)
+            yield dut.tll_2b_in.eq(0b11)
             yield dut.user_id0_in.eq(0x3ABCDEF)
             yield dut.user_id1_in.eq(0x3456789)
             yield dut.stream_in.payload.eq(data)
@@ -310,10 +341,10 @@ class HSPITransmitterTest(GatewareTestCase):
             yield
             yield
 
-            for i in range(0x80):
+            for i in range(0x400):
                 yield dut.stream_in.first.eq(1 if i == 0 else 0)
                 yield dut.stream_in.payload.eq(data)
-                if i == 0x7f:
+                if i == 0x3ff:
                     yield dut.stream_in.last.eq(1)
                 else:
                     yield dut.stream_in.last.eq(0)

@@ -83,9 +83,23 @@ class ColorlightHSPI(Elaboratable):
             *connect_fifo_to_stream(loopback_fifo, hspi_tx.stream_in, firstBit=-2, lastBit=-1),
         ]
 
+        with m.FSM(domain="hspi"):
+            with m.State("WAIT_RX"):
+                with m.If(hspi_rx.stream_out.first & hspi_rx.stream_out.valid):
+                    m.next = "WAIT_RX_DONE"
+
+            with m.State("WAIT_RX_DONE"):
+                with m.If(~hspi_pads.tx_ack):
+                    m.d.comb += hspi_tx.send_ack.eq(1)
+                    m.next = "WAIT_ACK"
+
+            with m.State("WAIT_ACK"):
+                with m.If(hspi_tx.ack_done):
+                    m.next = "WAIT_RX"
+
         if self.USE_ILA:
             trace_transmit = True
-            trace_receive  = False
+            trace_receive  = True
             trace_loopback = True
             use_enable     = False
 
@@ -119,24 +133,27 @@ class ColorlightHSPI(Elaboratable):
                 debug.led1,
                 debug.led2,
 
-                hspi_pads.tx_ack,
-                hspi_pads.tx_ready,
-
                 hspi_pads.tx_req,
-                hspi_pads.rx_act,
-
+                hspi_pads.tx_ready,
                 hspi_pads.tx_valid,
+
+                hspi_tx.send_ack,
+                hspi_tx.ack_done,
+
+                hspi_pads.rx_act,
+                hspi_pads.tx_ack,
                 hspi_pads.rx_valid,
             ]
 
             if trace_transmit:
-                signals = [hspi_tx.state] + signals + [
+                signals = signals + [
                     hspi_pads.hd.oe,
                     hspi_pads.hd.o,
                 ]
 
             if trace_receive:
-                signals = [hspi_rx.state] + signals + [
+                signals = signals + [
+                hspi_rx.stream_out.crc_error,
                 hspi_pads.hd.i,
             ]
 
@@ -155,7 +172,7 @@ class ColorlightHSPI(Elaboratable):
                 ]
 
             signals_bits = sum([s.width for s in signals])
-            depth = 1 * 8 * 1024 #int(33*8*1024/signals_bits)
+            depth = 1 * 6 * 1024 #int(33*8*1024/signals_bits)
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
