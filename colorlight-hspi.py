@@ -23,8 +23,9 @@ from amlib.debug.ila     import StreamILA, ILACoreParameters
 from hspi import HSPITransmitter, HSPIReceiver
 
 class ColorlightHSPI(Elaboratable):
-    USE_ILA = True
     ILA_MAX_PACKET_SIZE = 512
+    USE_ILA = True
+    USE_ACK = False
 
     def create_descriptors(self):
         """ Creates the descriptors that describe our audio topology. """
@@ -83,19 +84,22 @@ class ColorlightHSPI(Elaboratable):
             *connect_fifo_to_stream(loopback_fifo, hspi_tx.stream_in, firstBit=-2, lastBit=-1),
         ]
 
-        with m.FSM(domain="hspi"):
-            with m.State("WAIT_RX"):
-                with m.If(hspi_rx.stream_out.first & hspi_rx.stream_out.valid):
-                    m.next = "WAIT_RX_DONE"
+        if self.USE_ACK:
+            with m.FSM(domain="hspi"):
+                with m.State("WAIT_RX"):
+                    with m.If(hspi_rx.stream_out.first & hspi_rx.stream_out.valid):
+                        m.next = "WAIT_RX_DONE"
 
-            with m.State("WAIT_RX_DONE"):
-                with m.If(~hspi_pads.tx_ack):
-                    m.d.comb += hspi_tx.send_ack.eq(1)
-                    m.next = "WAIT_ACK"
+                with m.State("WAIT_RX_DONE"):
+                    with m.If(~hspi_pads.tx_ack):
+                        m.d.comb += hspi_tx.send_ack.eq(1)
+                        m.next = "WAIT_ACK"
 
-            with m.State("WAIT_ACK"):
-                with m.If(hspi_tx.ack_done):
-                    m.next = "WAIT_RX"
+                with m.State("WAIT_ACK"):
+                    with m.If(hspi_tx.ack_done):
+                        m.next = "WAIT_RX"
+        else:
+            m.d.comb += hspi_tx.send_ack.eq(0)
 
         if self.USE_ILA:
             trace_transmit = True
@@ -136,10 +140,15 @@ class ColorlightHSPI(Elaboratable):
                 hspi_pads.tx_req,
                 hspi_pads.tx_ready,
                 hspi_pads.tx_valid,
+            ]
 
-                hspi_tx.send_ack,
-                hspi_tx.ack_done,
+            if self.USE_ACK:
+                signals += [
+                    hspi_tx.send_ack,
+                    hspi_tx.ack_done,
+                ]
 
+            signals += [
                 hspi_pads.rx_act,
                 hspi_pads.tx_ack,
                 hspi_pads.rx_valid,
