@@ -103,9 +103,9 @@ class ColorlightHSPI(Elaboratable):
             m.d.comb += hspi_tx.send_ack.eq(0)
 
         if self.USE_ILA:
-            trace_transmit = True
-            trace_receive  = True
-            trace_loopback = True
+            trace_transmit = False
+            trace_receive  = False
+            trace_loopback = False
             use_enable     = False
 
             ulpi = platform.request(platform.default_usb_connection)
@@ -182,7 +182,7 @@ class ColorlightHSPI(Elaboratable):
                 ]
 
             signals_bits = sum([s.width for s in signals])
-            depth = 1 * 6 * 1024 #int(33*8*1024/signals_bits)
+            depth = 8 * 6 * 1024 #int(33*8*1024/signals_bits)
             m.submodules.ila = ila = \
                 StreamILA(
                     signals=signals,
@@ -216,6 +216,8 @@ class ColorlightHSPI(Elaboratable):
                     m.d.comb += ila.trigger.eq(hspi_pads.rx_act)
                 if trace_loopback:
                     m.d.comb += ila.trigger.eq(traced_stream.valid)
+                if not (trace_loopback or trace_receive or trace_transmit):
+                    m.d.comb += ila.trigger.eq(debug.led1)
 
 
             ILACoreParameters(ila).pickle()
