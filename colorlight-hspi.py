@@ -228,5 +228,5 @@ if __name__ == "__main__":
     os.environ["AMARANTH_verbose"] = "True"
     os.environ["AMARANTH_synth_opts"] = "-abc9"
     os.environ["AMARANTH_nextpnr_opts"] = "--timing-allow-fail"
-    os.environ["LUNA_PLATFORM"] = "boardsetup:ColorlightHSPIPlatform"
+    os.environ["LUNA_PLATFORM"] = "colorlight:ColorlightHSPIPlatform"
     top_level_cli(ColorlightHSPI)
