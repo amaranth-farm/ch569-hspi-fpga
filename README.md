@@ -1,7 +1,7 @@
 # Gateware for the WCH-Tech CH569 High Speed Parallel Interface (HSPI)
 
 This package provides gateware to communicate with the
-High Speed Parallel Interface of the WCH-Tech CH569 USB3 Super Speed chip.
+High Speed Parallel Interface of the [WCH-Tech CH569 USB3 Super Speed chip](https://github.com/openwch/ch569).
 The gateware is written in amaranth HDL and can be easily converted into Verilog,
 if necessary.
 
