@@ -1,3 +1,6 @@
+# Copyright (c) 2021 Hans Baier <hansfbaier@gmail.com>
+# SPDX-License-Identifier: BSD-3-Clause
+
 import operator
 from functools import reduce
 
